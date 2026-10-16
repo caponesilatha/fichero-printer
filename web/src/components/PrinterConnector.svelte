@@ -16,6 +16,7 @@
   import { tr } from "$/utils/i18n";
   import MdIcon from "$/components/basic/MdIcon.svelte";
   import { Toasts } from "$/utils/toasts";
+  import { btLog, logBt, clearBtLog } from "$/utils/btlog";
   import type { MaterialIcon } from "material-icons";
   import FirmwareUpdater from "$/components/basic/FirmwareUpdater.svelte";
 
@@ -34,8 +35,14 @@
   };
 
   const connectTo = async (showAll: boolean) => {
+    clearBtLog();
+    logBt(`Tap received. HTTPS/secure page: ${window.isSecureContext}. Web Bluetooth present: ${featureSupport.webBluetooth}.`);
+    logBt(`Browser: ${navigator.userAgent}`);
+
     if (!featureSupport.webBluetooth) {
-      Toasts.error(unsupportedReason());
+      const reason = unsupportedReason();
+      logBt(reason);
+      Toasts.error(reason);
       return;
     }
 
@@ -46,6 +53,7 @@
       await $printerClient.connect({ showAll });
     } catch (e) {
       connectionState.set("disconnected");
+      logBt(`FAILED: ${e}`);
       Toasts.error(e);
     }
   };
@@ -254,7 +262,42 @@
   {/if}
 </div>
 
+{#if $btLog.length > 0}
+  <div class="bt-log mt-2">
+    <div class="d-flex justify-content-between align-items-center mb-1">
+      <strong>Bluetooth log</strong>
+      <button
+        class="btn btn-sm btn-outline-secondary py-0"
+        type="button"
+        onclick={() => {
+          clearBtLog();
+          if ($connectionState === "connecting") connectionState.set("disconnected");
+        }}>
+        Close
+      </button>
+    </div>
+    <pre class="mb-0">{$btLog.join("\n")}</pre>
+  </div>
+{/if}
+
 <style>
+  .bt-log {
+    font-size: 11px;
+    text-align: left;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 0.5rem;
+    padding: 0.5rem;
+    max-height: 45vh;
+    overflow: auto;
+  }
+  .bt-log pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: inherit;
+    font-size: inherit;
+  }
+
   .dropdown-menu {
     width: 100vw;
     max-width: 300px;

@@ -1,4 +1,5 @@
 import { SERVICE_PROFILES, NAME_PREFIXES, CHUNK_SIZE, CHUNK_DELAY_MS, CMD } from "./constants";
+import { logBt } from "../../utils/btlog";
 import { TypedEventEmitter } from "./emitter";
 import { Utils } from "./utils";
 import { FicheroPrintTask } from "./print_task";
@@ -128,20 +129,44 @@ export class FicheroClient extends TypedEventEmitter<ClientEventMap> {
   private async pickDevice(showAll: boolean): Promise<BluetoothDevice> {
     const optionalServices = SERVICE_PROFILES.map((p) => p.service);
 
+    // Not awaited, so it can't delay the chooser (which needs the tap's user activation).
+    navigator.bluetooth
+      .getAvailability?.()
+      .then((ok) => logBt(`Bluetooth adapter available: ${ok}`))
+      .catch((e) => logBt(`getAvailability failed: ${e}`));
+
+    const startedAt = Date.now();
+    const watchdog = setTimeout(
+      () =>
+        logBt(
+          "Still waiting for the Bluetooth chooser. If nothing is shown on screen, Chrome is blocking it: " +
+            "turn ON Bluetooth and Location, and allow 'Nearby devices' for Chrome " +
+            "(Android Settings > Apps > Chrome > Permissions).",
+        ),
+      6000,
+    );
+
+    logBt(showAll ? "Opening chooser (all devices)..." : "Opening chooser (Fichero / D11s names)...");
+
     try {
-      return await navigator.bluetooth.requestDevice(
+      const device = await navigator.bluetooth.requestDevice(
         showAll
           ? { acceptAllDevices: true, optionalServices }
           : { filters: NAME_PREFIXES.map((namePrefix) => ({ namePrefix })), optionalServices },
       );
+      logBt(`Device chosen: ${device.name ?? device.id}`);
+      return device;
     } catch (e) {
       const err = e as { name?: string; message?: string };
+      logBt(`Chooser closed after ${Math.round((Date.now() - startedAt) / 1000)}s: ${err?.name}: ${err?.message}`);
       if (err?.name === "NotFoundError") {
         // Chrome reports both "user closed the chooser" and "no adapter / nothing found" this way.
         if (/cancel/i.test(err.message ?? "")) throw new Error("No device selected");
         throw new Error(`No printer found: ${err.message ?? "unknown reason"}`);
       }
       throw new Error(`Bluetooth error (${err?.name ?? "unknown"}): ${err?.message ?? String(e)}`);
+    } finally {
+      clearTimeout(watchdog);
     }
   }
 
@@ -154,9 +179,12 @@ export class FicheroClient extends TypedEventEmitter<ClientEventMap> {
     let lastError: unknown;
     for (let attempt = 1; attempt <= 3 && !server; attempt++) {
       try {
+        logBt(`Connecting to ${device.name ?? "device"} (attempt ${attempt}/3)...`);
         server = await gatt.connect();
+        logBt("Connected, looking for printer service...");
       } catch (e) {
         lastError = e;
+        logBt(`Connect attempt ${attempt} failed: ${FicheroClient.errText(e)}`);
         try {
           gatt.disconnect();
         } catch {
@@ -201,6 +229,7 @@ export class FicheroClient extends TypedEventEmitter<ClientEventMap> {
 
     this.writeChar = found.write;
     this.notifyChar = found.notify;
+    logBt("Printer service ready.");
   }
 
   /** Cleans up after a failed connection attempt without emitting a disconnect event. */
