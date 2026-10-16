@@ -1,7 +1,5 @@
 <script lang="ts">
-  import MdIcon from "$/components/basic/MdIcon.svelte";
-  import SignedNumberInput from "$/components/basic/SignedNumberInput.svelte";
-  import { tr } from "$/utils/i18n";
+  import MdIcon from "$/components/basic/MdIcon.svelte";  import { tr } from "$/utils/i18n";
   import * as fabric from "fabric";
   import { onDestroy } from "svelte";
   import QRCode from "$/fabric-object/qrcode";
@@ -70,11 +68,31 @@
   <div class="dropdown-menu arrangement p-2">
     <div class="input-group flex-nowrap input-group-sm mb-2">
       <span class="input-group-text">x</span>
-      <SignedNumberInput bind:value={x} onchange={updateObject} />
+      <button
+        type="button"
+        class="btn btn-outline-secondary px-2"
+        title="Change sign (+ / -)"
+        onclick={() => {
+          x = -(Number(x) || 0);
+          updateObject();
+        }}>
+        ±
+      </button>
+      <input class="form-control" type="number" bind:value={x} onchange={updateObject} />
     </div>
     <div class="input-group flex-nowrap input-group-sm mb-2">
       <span class="input-group-text">y</span>
-      <SignedNumberInput bind:value={y} onchange={updateObject} />
+      <button
+        type="button"
+        class="btn btn-outline-secondary px-2"
+        title="Change sign (+ / -)"
+        onclick={() => {
+          y = -(Number(y) || 0);
+          updateObject();
+        }}>
+        ±
+      </button>
+      <input class="form-control" type="number" bind:value={y} onchange={updateObject} />
     </div>
     {#if !(selectedObject instanceof fabric.FabricText || selectedObject instanceof fabric.FabricImage || selectedObject instanceof QRCode || selectedObject instanceof Barcode)}
       <div class="input-group flex-nowrap input-group-sm mb-2">

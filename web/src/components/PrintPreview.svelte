@@ -19,9 +19,7 @@
   import { canvasPreprocess } from "$/utils/canvas_preprocess";
   import { type DSVRowArray, csvParse } from "d3-dsv";
   import { LocalStoragePersistence } from "$/utils/persistence";
-  import MdIcon from "$/components/basic/MdIcon.svelte";
-  import SignedNumberInput from "$/components/basic/SignedNumberInput.svelte";
-  import { Toasts } from "$/utils/toasts";
+  import MdIcon from "$/components/basic/MdIcon.svelte";  import { Toasts } from "$/utils/toasts";
   import { CustomCanvas } from "$/fabric-object/custom_canvas";
   import { FileUtils } from "$/utils/file_utils";
   import AppModal from "$/components/basic/AppModal.svelte";
@@ -545,9 +543,37 @@
         <span class="input-group-text text-warning" title={offsetWarning}><MdIcon icon="warning" /></span>
       {/if}
       <span class="input-group-text"><MdIcon icon="unfold_more" class="r-90" /></span>
-      <SignedNumberInput bind:value={offset.x} onchange={() => updateSavedProp("offset", offset, true)} />
+      <button
+        type="button"
+        class="btn btn-outline-secondary px-2"
+        title="Change sign (+ / -)"
+        onclick={() => {
+          offset.x = -(Number(offset.x) || 0);
+          updateSavedProp("offset", offset, true);
+        }}>
+        ±
+      </button>
+      <input
+        class="form-control"
+        type="number"
+        bind:value={offset.x}
+        onchange={() => updateSavedProp("offset", offset, true)} />
       <span class="input-group-text"><MdIcon icon="unfold_more" /></span>
-      <SignedNumberInput bind:value={offset.y} onchange={() => updateSavedProp("offset", offset, true)} />
+      <button
+        type="button"
+        class="btn btn-outline-secondary px-2"
+        title="Change sign (+ / -)"
+        onclick={() => {
+          offset.y = -(Number(offset.y) || 0);
+          updateSavedProp("offset", offset, true);
+        }}>
+        ±
+      </button>
+      <input
+        class="form-control"
+        type="number"
+        bind:value={offset.y}
+        onchange={() => updateSavedProp("offset", offset, true)} />
       <select
         class="form-select"
         bind:value={offset.offsetType}
