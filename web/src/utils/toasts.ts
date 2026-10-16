@@ -5,10 +5,13 @@ export class Toasts {
   static error(e: any) {
     console.error(e);
 
+    // Shown at the top and for longer: bottom toasts are easy to miss behind the phone's browser UI.
     Toastify({
-      text: `${e}`,
-      gravity: "bottom",
-      duration: 5000,
+      text: `${e}`.replace(/^Error: /, ""),
+      gravity: "top",
+      position: "center",
+      duration: 10000,
+      close: true,
       className: "toast-danger",
     }).showToast();
   }

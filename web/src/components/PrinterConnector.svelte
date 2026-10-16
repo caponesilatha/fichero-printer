@@ -16,13 +16,29 @@
   import { tr } from "$/utils/i18n";
   import MdIcon from "$/components/basic/MdIcon.svelte";
   import { Toasts } from "$/utils/toasts";
-  import { onMount } from "svelte";
   import type { MaterialIcon } from "material-icons";
   import FirmwareUpdater from "$/components/basic/FirmwareUpdater.svelte";
 
-  let featureSupport = $state<AvailableTransports>({ webBluetooth: false });
+  // Detect immediately (no SSR here) so the button never depends on a later mount hook.
+  const featureSupport: AvailableTransports = Utils.getAvailableTransports();
+
+  /** Explains why Web Bluetooth is unavailable, so the button never just "does nothing". */
+  const unsupportedReason = (): string => {
+    if (typeof window !== "undefined" && !window.isSecureContext) {
+      return "Web Bluetooth only works on HTTPS pages (or localhost). This page was opened over plain HTTP, so the browser hides Bluetooth. Open the https:// address instead.";
+    }
+    if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+      return "iPhone/iPad browsers don't support Web Bluetooth. Use Chrome on Android or a computer.";
+    }
+    return "This browser doesn't support Web Bluetooth. On Android, open this page in Chrome (not an in-app browser).";
+  };
 
   const connectTo = async (showAll: boolean) => {
+    if (!featureSupport.webBluetooth) {
+      Toasts.error(unsupportedReason());
+      return;
+    }
+
     initClient();
     connectionState.set("connecting");
 
@@ -85,9 +101,6 @@
     return "battery_0_bar";
   };
 
-  onMount(() => {
-    featureSupport = Utils.getAvailableTransports();
-  });
 </script>
 
 <div class="input-group w-auto input-group-sm flex-nowrap justify-content-end">
@@ -218,14 +231,16 @@
   {:else}
     <button
       class="btn btn-primary"
-      disabled={$connectionState === "connecting" || !featureSupport.webBluetooth}
+      type="button"
+      disabled={$connectionState === "connecting"}
       title="Connect to printer"
       onclick={onConnectClicked}>
       <MdIcon icon="bluetooth" />
     </button>
     <button
       class="btn btn-outline-secondary"
-      disabled={$connectionState === "connecting" || !featureSupport.webBluetooth}
+      type="button"
+      disabled={$connectionState === "connecting"}
       title="Printer not listed? Show all nearby Bluetooth devices"
       onclick={onConnectAnyClicked}>
       <MdIcon icon="bluetooth_searching" />
