@@ -22,17 +22,21 @@
 
   let featureSupport = $state<AvailableTransports>({ webBluetooth: false });
 
-  const onConnectClicked = async () => {
+  const connectTo = async (showAll: boolean) => {
     initClient();
     connectionState.set("connecting");
 
     try {
-      await $printerClient.connect();
+      await $printerClient.connect({ showAll });
     } catch (e) {
       connectionState.set("disconnected");
       Toasts.error(e);
     }
   };
+
+  const onConnectClicked = () => connectTo(false);
+  // Fallback: list every nearby BLE device, for printers that don't advertise their name.
+  const onConnectAnyClicked = () => connectTo(true);
 
   const onDisconnectClicked = () => {
     $printerClient.disconnect();
@@ -215,8 +219,16 @@
     <button
       class="btn btn-primary"
       disabled={$connectionState === "connecting" || !featureSupport.webBluetooth}
+      title="Connect to printer"
       onclick={onConnectClicked}>
       <MdIcon icon="bluetooth" />
+    </button>
+    <button
+      class="btn btn-outline-secondary"
+      disabled={$connectionState === "connecting" || !featureSupport.webBluetooth}
+      title="Printer not listed? Show all nearby Bluetooth devices"
+      onclick={onConnectAnyClicked}>
+      <MdIcon icon="bluetooth_searching" />
     </button>
   {/if}
 

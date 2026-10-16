@@ -1,11 +1,4 @@
-import {
-  SERVICE_UUID,
-  WRITE_CHAR_UUID,
-  NOTIFY_CHAR_UUID,
-  CHUNK_SIZE,
-  CHUNK_DELAY_MS,
-  CMD,
-} from "./constants";
+import { SERVICE_PROFILES, NAME_PREFIXES, CHUNK_SIZE, CHUNK_DELAY_MS, CMD } from "./constants";
 import { TypedEventEmitter } from "./emitter";
 import { Utils } from "./utils";
 import { FicheroPrintTask } from "./print_task";
@@ -47,6 +40,7 @@ export class FicheroClient extends TypedEventEmitter<ClientEventMap> {
   private device: BluetoothDevice | null = null;
   private writeChar: BluetoothRemoteGATTCharacteristic | null = null;
   private notifyChar: BluetoothRemoteGATTCharacteristic | null = null;
+  private notifyListener: ((e: Event) => void) | null = null;
   private notifyBuf: number[] = [];
   private notifyResolve: (() => void) | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
@@ -99,45 +93,165 @@ export class FicheroClient extends TypedEventEmitter<ClientEventMap> {
     },
   };
 
-  async connect(opts?: { deviceId?: string }): Promise<void> {
-    let device: BluetoothDevice;
-
-    try {
-      device = await navigator.bluetooth.requestDevice({
-        filters: [{ namePrefix: "FICHERO" }, { namePrefix: "D11s_" }],
-        optionalServices: [SERVICE_UUID],
-      });
-    } catch {
-      throw new Error("No device selected");
-    }
-
-    device.addEventListener("gattserverdisconnected", () => this.onDisconnected());
-
-    const server = await device.gatt!.connect();
-    const service = await server.getPrimaryService(SERVICE_UUID);
-    this.writeChar = await service.getCharacteristic(WRITE_CHAR_UUID);
-    this.notifyChar = await service.getCharacteristic(NOTIFY_CHAR_UUID);
-    await this.notifyChar.startNotifications();
-    this.notifyChar.addEventListener("characteristicvaluechanged", (e: Event) => this.onNotify(e));
+  /**
+   * Opens the browser's Bluetooth device chooser and connects to the selected printer.
+   * Pass `showAll: true` to list every nearby BLE device instead of only Fichero/D11s names
+   * (useful if the printer does not include its name in the advertisement).
+   */
+  async connect(opts?: { showAll?: boolean }): Promise<void> {
+    const device = await this.pickDevice(opts?.showAll ?? false);
 
     this.device = device;
+    device.addEventListener("gattserverdisconnected", () => {
+      // Ignore stale events from a device of an earlier session.
+      if (this.device === device) this.onDisconnected();
+    });
+
+    try {
+      await this.openGatt(device);
+    } catch (e) {
+      this.releaseGatt(device);
+      throw e;
+    }
 
     this.emit("connect", { info: { deviceName: device.name } });
 
-    await this.fetchPrinterInfo();
+    try {
+      await this.fetchPrinterInfo();
+    } catch (e) {
+      // The link is up; a failed info query should not tear it down.
+      console.warn("Could not read printer info", e);
+    }
     this.startHeartbeat();
+  }
+
+  private async pickDevice(showAll: boolean): Promise<BluetoothDevice> {
+    const optionalServices = SERVICE_PROFILES.map((p) => p.service);
+
+    try {
+      return await navigator.bluetooth.requestDevice(
+        showAll
+          ? { acceptAllDevices: true, optionalServices }
+          : { filters: NAME_PREFIXES.map((namePrefix) => ({ namePrefix })), optionalServices },
+      );
+    } catch (e) {
+      const err = e as { name?: string; message?: string };
+      if (err?.name === "NotFoundError") {
+        // Chrome reports both "user closed the chooser" and "no adapter / nothing found" this way.
+        if (/cancel/i.test(err.message ?? "")) throw new Error("No device selected");
+        throw new Error(`No printer found: ${err.message ?? "unknown reason"}`);
+      }
+      throw new Error(`Bluetooth error (${err?.name ?? "unknown"}): ${err?.message ?? String(e)}`);
+    }
+  }
+
+  private async openGatt(device: BluetoothDevice): Promise<void> {
+    const gatt = device.gatt;
+    if (!gatt) throw new Error("This device does not expose a GATT server");
+
+    // The first GATT connection attempt often fails on Android / when the printer was just powered on.
+    let server: BluetoothRemoteGATTServer | undefined;
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= 3 && !server; attempt++) {
+      try {
+        server = await gatt.connect();
+      } catch (e) {
+        lastError = e;
+        try {
+          gatt.disconnect();
+        } catch {
+          /* ignore */
+        }
+        await Utils.sleep(400 * attempt);
+      }
+    }
+    if (!server) {
+      throw new Error(
+        `Could not connect to ${device.name ?? "the printer"} (${FicheroClient.errText(lastError)}). ` +
+          "Make sure it is on, close by, and not connected to another app or phone.",
+      );
+    }
+
+    // Give the stack a moment before service discovery; doing it immediately can fail.
+    await Utils.sleep(300);
+
+    let found: { write: BluetoothRemoteGATTCharacteristic; notify: BluetoothRemoteGATTCharacteristic } | undefined;
+    for (let attempt = 1; attempt <= 2 && !found; attempt++) {
+      for (const profile of SERVICE_PROFILES) {
+        try {
+          const service = await server.getPrimaryService(profile.service);
+          const write = await service.getCharacteristic(profile.write);
+          const notify = await service.getCharacteristic(profile.notify);
+          found = { write, notify };
+          break;
+        } catch (e) {
+          lastError = e;
+        }
+      }
+      if (!found) await Utils.sleep(500);
+    }
+    if (!found) {
+      throw new Error(`The printer's Bluetooth service was not found (${FicheroClient.errText(lastError)}).`);
+    }
+
+    // Register the listener before enabling notifications so the first response is not missed.
+    this.notifyListener = (e: Event) => this.onNotify(e);
+    found.notify.addEventListener("characteristicvaluechanged", this.notifyListener);
+    await found.notify.startNotifications();
+
+    this.writeChar = found.write;
+    this.notifyChar = found.notify;
+  }
+
+  /** Cleans up after a failed connection attempt without emitting a disconnect event. */
+  private releaseGatt(device: BluetoothDevice): void {
+    if (this.notifyChar && this.notifyListener) {
+      this.notifyChar.removeEventListener("characteristicvaluechanged", this.notifyListener);
+    }
+    this.notifyListener = null;
+    this.writeChar = null;
+    this.notifyChar = null;
+    if (this.device === device) this.device = null;
+    try {
+      if (device.gatt?.connected) device.gatt.disconnect();
+    } catch {
+      /* ignore */
+    }
+  }
+
+  private static errText(e: unknown): string {
+    const err = e as { name?: string; message?: string } | undefined;
+    return err?.message ? `${err.name ?? "Error"}: ${err.message}` : String(e ?? "unknown error");
+  }
+
+  private async writeBytes(char: BluetoothRemoteGATTCharacteristic, bytes: Uint8Array): Promise<void> {
+    // writeValueWithoutResponse is missing in older Chrome versions.
+    const noResponseFn = (char as { writeValueWithoutResponse?: unknown }).writeValueWithoutResponse;
+    if (typeof noResponseFn === "function") {
+      await char.writeValueWithoutResponse(bytes);
+    } else {
+      await char.writeValue(bytes);
+    }
   }
 
   disconnect(): void {
     this.stopHeartbeat();
-    if (this.device?.gatt?.connected) {
-      this.device.gatt.disconnect();
-    }
+    const device = this.device;
     this.onDisconnected();
+    try {
+      if (device?.gatt?.connected) device.gatt.disconnect();
+    } catch {
+      /* ignore */
+    }
   }
 
   private onDisconnected(): void {
+    if (!this.device) return; // already handled
     this.stopHeartbeat();
+    if (this.notifyChar && this.notifyListener) {
+      this.notifyChar.removeEventListener("characteristicvaluechanged", this.notifyListener);
+    }
+    this.notifyListener = null;
     this.device = null;
     this.writeChar = null;
     this.notifyChar = null;
@@ -147,7 +261,9 @@ export class FicheroClient extends TypedEventEmitter<ClientEventMap> {
 
   private onNotify(event: Event): void {
     const target = event.target as BluetoothRemoteGATTCharacteristic;
-    const val = new Uint8Array(target.value!.buffer);
+    const dv = target.value!;
+    // Respect the DataView's offset/length; the underlying buffer may be larger than the payload.
+    const val = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
     this.notifyBuf.push(...val);
     if (this.notifyResolve) {
       this.notifyResolve();
@@ -183,7 +299,7 @@ export class FicheroClient extends TypedEventEmitter<ClientEventMap> {
       this.notifyBuf = [];
     }
 
-    await this.writeChar.writeValueWithoutResponse(bytes);
+    await this.writeBytes(this.writeChar, bytes);
 
     if (wait) {
       await this.waitForNotify(timeout);
@@ -204,7 +320,7 @@ export class FicheroClient extends TypedEventEmitter<ClientEventMap> {
 
     for (let i = 0; i < data.length; i += CHUNK_SIZE) {
       const chunk = data.slice(i, i + CHUNK_SIZE);
-      await this.writeChar.writeValueWithoutResponse(chunk);
+      await this.writeBytes(this.writeChar, chunk);
       await Utils.sleep(CHUNK_DELAY_MS);
     }
   }

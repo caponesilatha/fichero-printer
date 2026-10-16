@@ -6,14 +6,21 @@
   let caps = Utils.getAvailableTransports();
 
   let antiFingerprinting = detectAntiFingerprinting();
-  let isMobile = typeof navigator !== "undefined" && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  let isIOS = typeof navigator !== "undefined" && /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  let isAndroid = typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
+  let insecure = typeof window !== "undefined" && !window.isSecureContext;
 </script>
 
 {#if !caps.webBluetooth}
   <div class="alert alert-danger text-center" role="alert">
-    {#if isMobile}
+    {#if insecure}
+      Web Bluetooth only works on HTTPS pages (or localhost). Open the https:// address of this app.
+    {:else if isIOS}
       <MdIcon icon="computer" />
-      Open on a desktop browser (Chrome, Edge, or Opera) to connect to your printer.
+      iPhone/iPad browsers don't support Web Bluetooth. Use Chrome, Edge, or Opera on Android or a computer
+      (or a Web Bluetooth capable iOS browser such as Bluefy).
+    {:else if isAndroid}
+      Web Bluetooth isn't available in this browser. Open this page in Chrome on Android.
     {:else}
       <div>
         {$tr("browser_warning.lines.first")}

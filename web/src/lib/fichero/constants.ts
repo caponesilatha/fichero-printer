@@ -2,6 +2,20 @@ export const SERVICE_UUID = "000018f0-0000-1000-8000-00805f9b34fb";
 export const WRITE_CHAR_UUID = "00002af1-0000-1000-8000-00805f9b34fb";
 export const NOTIFY_CHAR_UUID = "00002af0-0000-1000-8000-00805f9b34fb";
 
+// The printer exposes several equivalent BLE UART services (see docs/PROTOCOL.md).
+// We try them in order, so connecting still works if one of them is missing.
+export const SERVICE_PROFILES = [
+  { service: SERVICE_UUID, write: WRITE_CHAR_UUID, notify: NOTIFY_CHAR_UUID },
+  {
+    service: "0000ff00-0000-1000-8000-00805f9b34fb",
+    write: "0000ff02-0000-1000-8000-00805f9b34fb",
+    notify: "0000ff01-0000-1000-8000-00805f9b34fb",
+  },
+] as const;
+
+// Advertised BLE names (namePrefix is case-sensitive in Web Bluetooth).
+export const NAME_PREFIXES = ["FICHERO", "Fichero", "D11s"] as const;
+
 export const PRINTHEAD_PX = 96;
 export const BYTES_PER_ROW = 12;
 export const CHUNK_SIZE = 200;
