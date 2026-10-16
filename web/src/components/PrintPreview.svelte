@@ -20,6 +20,7 @@
   import { type DSVRowArray, csvParse } from "d3-dsv";
   import { LocalStoragePersistence } from "$/utils/persistence";
   import MdIcon from "$/components/basic/MdIcon.svelte";
+  import SignedNumberInput from "$/components/basic/SignedNumberInput.svelte";
   import { Toasts } from "$/utils/toasts";
   import { CustomCanvas } from "$/fabric-object/custom_canvas";
   import { FileUtils } from "$/utils/file_utils";
@@ -544,17 +545,9 @@
         <span class="input-group-text text-warning" title={offsetWarning}><MdIcon icon="warning" /></span>
       {/if}
       <span class="input-group-text"><MdIcon icon="unfold_more" class="r-90" /></span>
-      <input
-        class="form-control"
-        type="number"
-        bind:value={offset.x}
-        onchange={() => updateSavedProp("offset", offset, true)} />
+      <SignedNumberInput bind:value={offset.x} onchange={() => updateSavedProp("offset", offset, true)} />
       <span class="input-group-text"><MdIcon icon="unfold_more" /></span>
-      <input
-        class="form-control"
-        type="number"
-        bind:value={offset.y}
-        onchange={() => updateSavedProp("offset", offset, true)} />
+      <SignedNumberInput bind:value={offset.y} onchange={() => updateSavedProp("offset", offset, true)} />
       <select
         class="form-select"
         bind:value={offset.offsetType}
