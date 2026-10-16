@@ -136,15 +136,14 @@ export class FicheroClient extends TypedEventEmitter<ClientEventMap> {
       .catch((e) => logBt(`getAvailability failed: ${e}`));
 
     const startedAt = Date.now();
-    const watchdog = setTimeout(
-      () =>
-        logBt(
-          "Still waiting for the Bluetooth chooser. If nothing is shown on screen, Chrome is blocking it: " +
-            "turn ON Bluetooth and Location, and allow 'Nearby devices' for Chrome " +
-            "(Android Settings > Apps > Chrome > Permissions).",
-        ),
-      6000,
-    );
+    const ua = navigator.userAgent;
+    const androidVersion = Number(/Android (\d+)/i.exec(ua)?.[1] ?? 0);
+    const hint = /SamsungBrowser/i.test(ua)
+      ? "You are using Samsung Internet, whose Bluetooth chooser often does not open. Open this page in Google Chrome instead."
+      : androidVersion > 0 && androidVersion < 12
+        ? "Turn ON Location (GPS) and allow location for this browser: Android needs it to scan for Bluetooth devices."
+        : "Turn ON Bluetooth and Location, and allow 'Nearby devices' for this browser (Android Settings > Apps > Permissions).";
+    const watchdog = setTimeout(() => logBt(`Still waiting for the Bluetooth chooser. If nothing is shown on screen: ${hint}`), 6000);
 
     logBt(showAll ? "Opening chooser (all devices)..." : "Opening chooser (Fichero / D11s names)...");
 
